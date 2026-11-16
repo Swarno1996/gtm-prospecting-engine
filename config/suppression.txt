@@ -1,0 +1,3 @@
+# Domains and emails that must never be prospected: opt outs, competitors, partners.
+# One entry per line.
+optout-logistik.example

@@ -1,0 +1,43 @@
+# Example ICP for a fictional B2B SaaS vendor selling into DACH.
+# Every number here is a tuning knob. Change the file, rerun, compare the list.
+
+hard_filters:
+  countries: [DE, AT, CH]
+  min_employees: 200
+  max_employees: 20000
+  excluded_industries: [government, education]
+
+fit:                      # up to 100 points
+  industries:
+    logistics: 45
+    manufacturing: 45
+    wholesale: 35
+    retail: 30
+    software: 15
+  size_bands:
+    - {min: 1000, max: 5000, points: 40}
+    - {min: 500, max: 999, points: 30}
+    - {min: 5001, points: 25}
+    - {min: 200, max: 499, points: 15}
+  countries: {DE: 15, AT: 10, CH: 10}
+
+signals:                  # up to 100 points, each decays with age
+  half_life_days: 45
+  max_age_days: 180
+  weights:
+    hiring_sales: 40      # open SDR, AE or RevOps roles
+    funding: 35
+    new_sales_leader: 45  # new VP Sales or CRO in seat
+    expansion: 25         # new site, new market
+    tech_install: 20      # adopted a tool that pairs with the product
+
+weights: {fit: 0.6, signal: 0.4}
+tiers: {A: 65, B: 40}     # total score thresholds, everything below B is C
+
+persona:
+  max_per_company: 2
+  include:                # ordered by priority, first matching group wins
+    - [chief revenue, cro, vp sales, vice president sales, head of sales, vertriebsleiter, leiter vertrieb]
+    - [revenue operations, revops, sales operations]
+    - [sales director, director sales, head of business development]
+  exclude: [assistant, intern, werkstudent, former]

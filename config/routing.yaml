@@ -1,0 +1,17 @@
+prospect_tiers: [A, B]       # tiers that go to CRM
+cooldown_days: 30            # do not reprocess a domain inside this window
+require_phone: true          # a contact without a valid phone is not worth an SDR call task
+
+sdrs:                        # round robin inside the matching country
+  - {name: SDR Anna, owner_id: "1001", countries: [DE]}
+  - {name: SDR Jonas, owner_id: "1002", countries: [DE]}
+  - {name: SDR Mira, owner_id: "1003", countries: [AT, CH]}
+
+task:
+  due_in_business_days: 1
+  priority_by_tier: {A: HIGH, B: MEDIUM}
+  subject: "Call {first_name} {last_name} ({title}) at {company}"
+
+dialer:
+  tiers: [A]                 # only tier A is loaded into the dialer
+  campaign_task: outbound_call

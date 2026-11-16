@@ -1,0 +1,14 @@
+{
+  "seq": 9000,
+  "companies": [
+    {"id": "co-1", "name": "Alpenwerk Maschinenbau GmbH", "domain": "alpenwerk-maschinenbau.example", "owner_id": "1003", "lifecyclestage": "lead", "open_deals": 0},
+    {"id": "co-2", "name": "Nordlicht Retail SE", "domain": "www.nordlicht-retail.example", "owner_id": "1001", "lifecyclestage": "customer", "open_deals": 0},
+    {"id": "co-3", "name": "Donau Fertigung", "domain": "donau-gruppe.example", "owner_id": "1003", "lifecyclestage": "opportunity", "open_deals": 1},
+    {"id": "co-4", "name": "Elbe Pharma AG", "domain": "elbe-pharma.example", "owner_id": "1002", "lifecyclestage": "lead", "open_deals": 0}
+  ],
+  "contacts": [
+    {"id": "ct-1", "company_id": "co-1", "email": "k.moser@alpenwerk-maschinenbau.example", "firstname": "Katharina", "lastname": "Moser", "jobtitle": "VP Sales", "phone": "+436645550101"},
+    {"id": "ct-2", "company_id": "", "email": "j.brandt@spree-handel.example", "firstname": "Jonas", "lastname": "Brandt", "jobtitle": "Head of Sales", "phone": ""}
+  ],
+  "tasks": []
+}
