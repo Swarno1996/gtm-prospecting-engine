@@ -15,3 +15,7 @@ task:
 dialer:
   tiers: [A]                 # only tier A is loaded into the dialer
   campaign_task: outbound_call
+
+calls:
+  max_attempts: 3              # no answer this many times stops the sequence
+  retry_after_business_days: 1

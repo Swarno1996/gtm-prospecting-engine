@@ -73,3 +73,8 @@ def build_dialer():
     from gtm.dialer.mock import MockDialer
 
     return MockDialer(state_dir() / "dialer.jsonl")
+
+
+def suppression_file() -> Path:
+    """Static list in config plus a runtime list the call outcome flow appends to."""
+    return state_dir() / "suppression_runtime.txt"

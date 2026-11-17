@@ -5,23 +5,15 @@ import json
 import shutil
 import sys
 
-import yaml
-
 from gtm import icp as icp_mod
-from gtm import settings, sources
-from gtm.flows import build_list, crm_lookup, dialer_sync, prospect, report
-from gtm.ledger import Ledger
-from gtm.routing import Router
+from gtm import service, settings, sources
+from gtm.flows import build_list
 
 ROOT = settings.ROOT
 
 
-def _routing(args) -> dict:
-    return yaml.safe_load(open(args.routing))
-
-
 def cmd_lookup(args) -> int:
-    res = crm_lookup.run(settings.build_crm(), args.query)
+    res = service.lookup(args.query)
     if not res["found"]:
         print(f"Not in CRM: {args.query}")
         return 0
@@ -30,7 +22,7 @@ def cmd_lookup(args) -> int:
     print(f"  stage {c.get('lifecyclestage') or 'none'}, open deals {c.get('open_deals', 0)}, owner {c.get('owner_id') or 'unassigned'}")
     print(f"  contacts: {len(res['contacts'])}")
     for ct in res["contacts"]:
-        print(f"    {ct.get('firstname', '')} {ct.get('lastname', '')}, {ct.get('jobtitle', '')}  {ct.get('email', '')}  {ct.get('phone', '')}")
+        print(f"    [{ct['id']}] {ct.get('firstname', '')} {ct.get('lastname', '')}, {ct.get('jobtitle', '')}  {ct.get('email', '')}  {ct.get('phone', '')}")
     print(f"  open tasks: {len(res['open_tasks'])}")
     for t in res["open_tasks"]:
         print(f"    {t.get('subject', '')}  due {t.get('due', '')}")
@@ -49,14 +41,9 @@ def cmd_list(args) -> int:
 
 
 def cmd_prospect(args) -> int:
-    routing = _routing(args)
-    state = settings.state_dir()
-    res = prospect.run(
-        sources.load(args.source), icp=icp_mod.load(args.icp), routing=routing,
-        crm=settings.build_crm(), providers=settings.build_providers(), dialer=settings.build_dialer(),
-        ledger=Ledger(state / "ledger.jsonl"), router=Router(routing, state / "roundrobin.json"),
-        suppression=sources.load_suppression(args.suppression), max_credits=args.max_credits,
-        dry_run=args.dry_run, push_dialer=args.push_dialer)
+    res = service.prospect_run(source=args.source, icp=args.icp, routing=args.routing,
+                               suppression_path=args.suppression, max_credits=args.max_credits,
+                               dry_run=args.dry_run, push_dialer=args.push_dialer)
     if args.json:
         print(json.dumps(res, indent=2))
         return 0
@@ -81,8 +68,7 @@ def cmd_prospect(args) -> int:
 
 
 def cmd_dialer(args) -> int:
-    res = dialer_sync.run(Ledger(settings.state_dir() / "ledger.jsonl"), settings.build_dialer(),
-                          _routing(args), args.dry_run)
+    res = service.dialer(args.dry_run, args.routing)
     print(f"Loaded {len(res['pushed'])} contacts into the dialer, {res['skipped']} skipped"
           + (" (dry run)" if res["dry_run"] else ""))
     for n in res["pushed"]:
@@ -91,7 +77,32 @@ def cmd_dialer(args) -> int:
 
 
 def cmd_report(args) -> int:
-    print(json.dumps(report.run(Ledger(settings.state_dir() / "ledger.jsonl")), indent=2))
+    print(json.dumps(service.funnel(), indent=2))
+    return 0
+
+
+def cmd_outcome(args) -> int:
+    payload = {"crm_contact_id": args.contact_id, "outcome": args.outcome, "notes": args.notes,
+               "callback_at": args.callback_at, "call_id": args.call_id}
+    res = service.outcome({k: v for k, v in payload.items() if v}, args.routing)
+    print(f"{res['outcome']} for {res['contact_id']} (attempt {res.get('attempt', '?')})"
+          + (" duplicate, ignored" if res["duplicate"] else ""))
+    for a in res["actions"]:
+        print(f"  {a}")
+    return 0
+
+
+def cmd_brief(args) -> int:
+    res = service.brief(args.contact_id)
+    print(res["brief"])
+    print(f"\n(written by {res['written_by']})")
+    return 0
+
+
+def cmd_serve(args) -> int:
+    from gtm.server import serve
+
+    serve(args.host, args.port)
     return 0
 
 
@@ -136,6 +147,24 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_dialer)
 
+    p = sub.add_parser("call-outcome", help="write a call result back to the CRM")
+    common(p, source=False)
+    p.add_argument("contact_id")
+    p.add_argument("outcome", choices=sorted(__import__("gtm.flows.call_outcome", fromlist=["x"]).OUTCOMES))
+    p.add_argument("--notes", default="")
+    p.add_argument("--callback-at", default="")
+    p.add_argument("--call-id", default="")
+    p.set_defaults(fn=cmd_outcome)
+
+    p = sub.add_parser("call-brief", help="one screen call prep for a CRM contact")
+    p.add_argument("contact_id")
+    p.set_defaults(fn=cmd_brief)
+
+    p = sub.add_parser("serve", help="HTTP server for n8n and Langdock")
+    p.add_argument("--host", default=None)
+    p.add_argument("--port", type=int, default=8787)
+    p.set_defaults(fn=cmd_serve)
+
     p = sub.add_parser("report", help="funnel report from the run ledger")
     p.set_defaults(fn=cmd_report)
 
@@ -143,7 +172,11 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_reset)
 
     args = ap.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except (KeyError, ValueError) as e:
+        print(f"error: {e.args[0] if e.args else e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

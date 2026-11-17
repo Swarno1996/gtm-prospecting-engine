@@ -1,0 +1,21 @@
+# Langdock workflow build spec, not an import file.
+name: "GTM L2: Call prep on demand"
+nodes:
+  - name: SDR asks for a brief
+    type: Form Trigger
+    fields:
+      - {name: contact_id, label: "CRM contact id", required: true}
+
+  - name: Get brief
+    type: HTTP Request
+    method: GET
+    url: "https://<your-engine-host>/call-brief?contact_id={{ sdr_asks_for_a_brief.output.contact_id }}"
+    headers: {X-GTM-Secret: "<stored as a secret>"}
+
+  - name: Show brief
+    type: Output
+    value: "{{ get_brief.output.body.brief }}"
+
+# The engine writes the opener and questions itself through Langdock's
+# completion API when LANGDOCK_API_KEY is set (gtm/llm.py), so the model call
+# is billed and governed in the same Langdock workspace.

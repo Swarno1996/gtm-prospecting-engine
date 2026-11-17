@@ -1,0 +1,62 @@
+{
+  "name": "GTM 04: Error alerts",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "4cbe5145-786b-5fa8-b49f-cf3f3cd0d247",
+      "name": "On workflow error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "you@example.com",
+        "subject": "=n8n FAILED: {{ $json.workflow.name }} / {{ $json.execution.lastNodeExecuted }}",
+        "emailType": "text",
+        "message": "={{ $json.execution.error.message }}\n\nExecution: {{ $json.execution.url }}",
+        "options": {}
+      },
+      "id": "764fef96-b6ea-5189-bab6-5749ffcc1c1c",
+      "name": "Send error alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "On workflow error": {
+      "main": [
+        [
+          {
+            "node": "Send error alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    {
+      "name": "gtm"
+    },
+    {
+      "name": "monitoring"
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 Needs a private app token with scopes for companies, contacts and tasks
 (crm.objects.companies.read/write, crm.objects.contacts.read/write).
 Association type ids are HubSpot defined: contact to company 279,
-task to contact 204, task to company 192.
+task to contact 204, task to company 192, note to contact 202.
 """
 from __future__ import annotations
 
@@ -116,3 +116,51 @@ class HubSpotCRM:
         return [{"id": h["id"], "subject": h["properties"].get("hs_task_subject", ""),
                  "due": h["properties"].get("hs_timestamp", ""),
                  "owner_id": h["properties"].get("hubspot_owner_id", "")} for h in hits]
+
+    def get_company(self, company_id: str) -> dict | None:
+        try:
+            r = http.request("GET", f"{BASE}/companies/{company_id}", headers=self._h,
+                             params={"properties": ",".join(COMPANY_PROPS)})
+        except http.HttpError as e:
+            if e.status == 404:
+                return None
+            raise
+        return self._company(r)
+
+    def get_contact(self, contact_id: str) -> dict | None:
+        try:
+            r = http.request("GET", f"{BASE}/contacts/{contact_id}", headers=self._h,
+                             params={"properties": ",".join(CONTACT_PROPS),
+                                     "associations": "companies"})
+        except http.HttpError as e:
+            if e.status == 404:
+                return None
+            raise
+        comp = (r.get("associations", {}).get("companies", {}).get("results") or [{}])[0]
+        return self._contact(r, comp.get("id", ""))
+
+    def update_contact(self, contact_id: str, props: dict) -> None:
+        mapping = {"phone": "phone", "lifecyclestage": "lifecyclestage",
+                   "hs_lead_status": "hs_lead_status"}
+        body = {mapping[k]: v for k, v in props.items() if k in mapping}
+        if body:
+            http.request("PATCH", f"{BASE}/contacts/{contact_id}", headers=self._h,
+                         body={"properties": body})
+
+    def contact_open_tasks(self, contact_id: str) -> list[dict]:
+        hits = self._search("tasks", [
+            {"propertyName": "associations.contact", "operator": "EQ", "value": contact_id},
+            {"propertyName": "hs_task_status", "operator": "NEQ", "value": "COMPLETED"},
+        ], ["hs_task_subject", "hs_timestamp"], 50)
+        return [{"id": h["id"], "subject": h["properties"].get("hs_task_subject", "")} for h in hits]
+
+    def complete_task(self, task_id: str) -> None:
+        http.request("PATCH", f"{BASE}/tasks/{task_id}", headers=self._h,
+                     body={"properties": {"hs_task_status": "COMPLETED"}})
+
+    def add_note(self, contact_id: str, body: str) -> dict:
+        import time
+        r = http.request("POST", f"{BASE}/notes", headers=self._h, body={
+            "properties": {"hs_note_body": body, "hs_timestamp": str(int(time.time() * 1000))},
+            "associations": [_assoc(contact_id, 202)]})
+        return {"id": r["id"], "body": body}

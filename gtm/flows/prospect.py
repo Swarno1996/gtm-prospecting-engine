@@ -34,7 +34,8 @@ def run(companies: list[Company], *, icp: dict, routing: dict, crm, providers: l
 
     def done(s, outcome: str, **extra) -> None:
         row = {"event": "company", "run_id": run_id, "domain": s.company.domain,
-               "name": s.company.name, "tier": s.tier, "score": s.total, "outcome": outcome, **extra}
+               "name": s.company.name, "tier": s.tier, "score": s.total,
+               "top_signal": s.top_signal, "outcome": outcome, **extra}
         results.append(row)
         # Only finished decisions enter the ledger. A company stopped by the
         # credit budget is retried on the next run.

@@ -63,3 +63,32 @@ class MockCRM:
     def open_tasks(self, company_id: str) -> list[dict]:
         return [t for t in self.db["tasks"]
                 if t.get("company_id") == company_id and t.get("status") != "COMPLETED"]
+
+    def get_company(self, company_id: str) -> dict | None:
+        return next((c for c in self.db["companies"] if c["id"] == company_id), None)
+
+    def get_contact(self, contact_id: str) -> dict | None:
+        return next((c for c in self.db["contacts"] if c["id"] == contact_id), None)
+
+    def update_contact(self, contact_id: str, props: dict) -> None:
+        c = self.get_contact(contact_id)
+        if c is None:
+            raise KeyError(contact_id)
+        c.update(props)
+        self._save()
+
+    def contact_open_tasks(self, contact_id: str) -> list[dict]:
+        return [t for t in self.db["tasks"]
+                if t.get("contact_id") == contact_id and t.get("status") != "COMPLETED"]
+
+    def complete_task(self, task_id: str) -> None:
+        for t in self.db["tasks"]:
+            if t["id"] == task_id:
+                t["status"] = "COMPLETED"
+        self._save()
+
+    def add_note(self, contact_id: str, body: str) -> dict:
+        rec = {"id": self._next_id("note"), "contact_id": contact_id, "body": body}
+        self.db.setdefault("notes", []).append(rec)
+        self._save()
+        return rec

@@ -1,0 +1,165 @@
+{
+  "name": "GTM 03: Daily funnel digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "583e1338-46a5-58b8-8ccf-c894f6e80c4f",
+      "name": "Daily 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "50d31f6b-1045-5f6c-bb42-0409dc30cb24",
+              "name": "engineUrl",
+              "value": "http://localhost:8787",
+              "type": "string"
+            },
+            {
+              "id": "642299b8-fa7f-5602-b176-4b99597ac74f",
+              "name": "alertEmail",
+              "value": "you@example.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "05d63ca6-b30d-5e96-91ad-724493c4d146",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.engineUrl }}/report",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "d249e537-a3cf-5de3-a826-08d709cb6030",
+      "name": "Get funnel report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Daily funnel digest. ALERT when the funnel has gone quiet.\nconst r = $input.first().json;\nconst o = r.outcomes || {};\nconst dropped = Object.entries(r.contacts_dropped || {}).map(([k, v]) => `  ${k}: ${v}`).join('\\n');\nconst alert = (r.contacts_created || 0) === 0;\nreturn [{ json: {\n  subject: `${alert ? 'ALERT ' : ''}GTM funnel: ${r.contacts_created} contacts, ${r.dialer_loaded} in dialer`,\n  body: [\n    `Runs: ${r.runs}`, `Accounts processed: ${r.companies_processed}`,\n    `Contacts created: ${r.contacts_created}`, `Loaded into dialer: ${r.dialer_loaded}`,\n    `Outcomes: ${JSON.stringify(o)}`, `Phone source mix: ${JSON.stringify(r.phone_source || {})}`,\n    'Dropped contacts:', dropped || '  none',\n  ].join('\\n'),\n}}];"
+      },
+      "id": "91768af3-340a-566e-8df6-4a6fbc0c2790",
+      "name": "Format digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').item.json.alertEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "ee06663f-12c1-5c97-b73e-51591c350085",
+      "name": "Send digest",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 09:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get funnel report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get funnel report": {
+      "main": [
+        [
+          {
+            "node": "Format digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format digest": {
+      "main": [
+        [
+          {
+            "node": "Send digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    {
+      "name": "gtm"
+    },
+    {
+      "name": "monitoring"
+    }
+  ]
+}

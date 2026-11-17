@@ -1,6 +1,6 @@
 [project]
 name = "gtm-prospecting-engine"
-version = "0.1.0"
+version = "0.2.0"
 description = "ICP and signal driven prospecting: list building, CRM dedupe, waterfall enrichment, SDR tasks, dialer handoff"
 requires-python = ">=3.10"
 dependencies = ["pyyaml>=6"]

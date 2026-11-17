@@ -28,3 +28,11 @@ class Ledger:
 
     def dialer_pushed(self) -> set[str]:
         return {r["crm_contact_id"] for r in self.rows() if r.get("event") == "dialer_push"}
+
+    def calls(self, crm_contact_id: str) -> list[dict]:
+        return [r for r in self.rows()
+                if r.get("event") == "call" and r.get("crm_contact_id") == crm_contact_id]
+
+    def company_row(self, domain: str) -> dict | None:
+        rows = [r for r in self.rows() if r.get("event") == "company" and r.get("domain") == domain]
+        return rows[-1] if rows else None

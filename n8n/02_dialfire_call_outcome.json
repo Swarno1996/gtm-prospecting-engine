@@ -1,0 +1,163 @@
+{
+  "name": "GTM 02: Dialfire call outcome to CRM",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gtm-call-outcome",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "22492855-6487-5ec4-988c-7ed9e44d8a2f",
+      "name": "Dialfire webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "bad57faa-8924-54e2-abde-0d01d25929c9"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0c15c37d-c350-5509-be6c-aa090e38d87a",
+              "name": "engineUrl",
+              "value": "http://localhost:8787",
+              "type": "string"
+            },
+            {
+              "id": "8cdf4b1a-6b98-51eb-8d53-8c2831368913",
+              "name": "alertEmail",
+              "value": "you@example.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ca402c62-f3b7-52f8-9fee-aae380eeb684",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Map a Dialfire webhook task payload onto the engine's call outcome contract.\n// Dialfire sends the contact's campaign fields. crm_contact_id is one of them because\n// the engine writes it when it loads the contact. The status values are defined per\n// campaign: edit STATUS_MAP to match yours, then check against a real execution.\nconst STATUS_MAP = {\n  success: 'meeting_booked', termin: 'meeting_booked',\n  declined: 'not_interested', kein_interesse: 'not_interested',\n  no_answer: 'no_answer', nicht_erreicht: 'no_answer',\n  callback: 'callback', wiedervorlage: 'callback',\n  wrong_number: 'wrong_number', falsche_nummer: 'wrong_number',\n  dnc: 'do_not_call', sperre: 'do_not_call',\n};\nconst b = $input.first().json.body || {};\nconst status = String(b.$status || b.status || '').toLowerCase();\nconst outcome = STATUS_MAP[status];\nif (!b.crm_contact_id || !outcome) {\n  throw new Error(`Call outcome contract broken: crm_contact_id=${b.crm_contact_id} status=${status}`);\n}\nreturn [{ json: {\n  crm_contact_id: String(b.crm_contact_id),\n  outcome,\n  call_id: String(b.$call_id || b.call_id || b.$id || ''),\n  callback_at: b.callback_at || '',\n  notes: b.notes || b.comment || '',\n  agent: b.$user || b.agent || '',\n}}];"
+      },
+      "id": "9fdbf381-c0f1-583c-ba57-2a763577a7ae",
+      "name": "Map Dialfire fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.engineUrl }}/call-outcome",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 300000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "b4cd505c-5b69-54ac-98fd-a9e10f39c3bb",
+      "name": "Write outcome to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, actions: $json.actions }) }}",
+        "options": {}
+      },
+      "id": "48e8de54-351c-5bf9-b7de-8d905b6aa9f1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Dialfire webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Map Dialfire fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Dialfire fields": {
+      "main": [
+        [
+          {
+            "node": "Write outcome to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write outcome to CRM": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    {
+      "name": "gtm"
+    },
+    {
+      "name": "dialer"
+    }
+  ]
+}

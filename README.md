@@ -1,6 +1,6 @@
 # GTM prospecting engine
 
-Outbound prospecting as code. An account list goes in. Scored accounts, deduplicated CRM records, enriched contacts, SDR call tasks and a loaded dialer come out.
+Outbound prospecting as Python code, orchestrated from n8n or Langdock. An account list goes in. Scored accounts, deduplicated CRM records, enriched contacts, SDR call tasks, a loaded dialer and call outcomes written back to the CRM come out.
 
 ```mermaid
 flowchart LR
@@ -11,9 +11,23 @@ flowchart LR
     P --> W[Waterfall reveal<br/>Cognism then Lusha<br/>phone validated]
     W --> C[CRM: company,<br/>contacts, call tasks]
     C --> D[Dialer<br/>tier A only]
+    D --> O[Call outcome<br/>back to CRM]
+    O --> C
     C --> L[(Run ledger)]
     X --> L
 ```
+
+```mermaid
+flowchart LR
+    N[n8n<br/>schedules, webhooks,<br/>alerts] -->|HTTP| E[Python engine<br/>gtm serve]
+    LD[Langdock<br/>schedules, forms,<br/>agents] -->|HTTP| E
+    E -->|completion API| LD
+    E --> H[HubSpot]
+    E --> P[Cognism, Lusha, Clay]
+    E --> DF[Dialfire]
+```
+
+The engine holds the logic and is tested. n8n and Langdock are two ways to run it on a schedule, react to webhooks and alert people, so a RevOps team can see and change the orchestration without touching the code.
 
 I built and ran flows like these as a GTM Engineer. This repo is a clean reference implementation of the pattern. It runs out of the box on synthetic data and contains no employer code, data or configuration.
 
@@ -68,15 +82,55 @@ The fixtures are built so that every branch fires once. Each line above is a cas
 | Domain is on the suppression list | Skips before any credit is spent. |
 | Same list is run twice | Second run changes nothing and costs nothing. |
 
-## The five flows
+## The seven flows
 
 | Command | Flow | Module |
 |---|---|---|
-| `gtm lookup <domain or name>` | Pull up an account in the CRM: stage, owner, contacts, open tasks | `gtm/flows/crm_lookup.py` |
+| `gtm lookup <domain or name>` | Pull up an account in the CRM: stage, owner, contacts with ids, open tasks | `gtm/flows/crm_lookup.py` |
 | `gtm list` | Score and rank an account list by ICP fit and buying signals, export CSV | `gtm/flows/build_list.py` |
 | `gtm prospect` | Full run: dedupe, reveal, write to CRM, create and assign SDR call tasks | `gtm/flows/prospect.py` |
 | `gtm dialer-sync` | Load callable contacts from earlier runs into the dialer, exactly once | `gtm/flows/dialer_sync.py` |
+| `gtm call-outcome <contact> <outcome>` | Write a call result back: close the task, log a note, schedule the next step | `gtm/flows/call_outcome.py` |
+| `gtm call-brief <contact>` | One screen call prep: why this account, who the person is, earlier calls, opener and questions | `gtm/flows/call_brief.py` |
 | `gtm report` | Funnel numbers from the run ledger: outcomes, drops, phone source mix | `gtm/flows/report.py` |
+
+### Call outcomes
+
+| Outcome | What the CRM gets |
+|---|---|
+| `meeting_booked` | Task closed, lead status OPEN_DEAL, high priority prep task for the meeting |
+| `not_interested` | Task closed, lead status UNQUALIFIED, nothing scheduled |
+| `no_answer` | Task closed, retry next business day, sequence stops after 3 attempts |
+| `callback` | Task closed, new task at the time the prospect asked for |
+| `wrong_number` | Task closed, phone cleared, task to find a new number |
+| `do_not_call` | Task closed, phone cleared, email suppressed for every future run |
+
+Every outcome logs a note on the contact. A repeated `call_id` is ignored, so a dialer that retries its webhook does not create duplicate tasks.
+
+```bash
+python -m gtm lookup hansa-fracht.example         # contact ids are shown in brackets
+python -m gtm call-brief ct-9002
+python -m gtm call-outcome ct-9002 no_answer --call-id c1
+python -m gtm call-outcome ct-9002 callback --callback-at 2026-12-01T10:00:00+01:00
+```
+
+## n8n and Langdock
+
+`python -m gtm serve` starts a small HTTP server (standard library only) that both tools call with their HTTP Request node. Set `GTM_SERVER_SECRET`; callers send it as `X-GTM-Secret`.
+
+| Endpoint | Used by |
+|---|---|
+| `POST /prospect` | n8n 01, Langdock L1 |
+| `POST /call-outcome` | n8n 02 (Dialfire webhook), Langdock L3 (call notes triage) |
+| `GET /call-brief?contact_id=` | Langdock L2 (SDR form) |
+| `GET /report` | n8n 03 (daily digest) |
+| `GET /lookup?q=`, `POST /dialer-sync`, `GET /health` | any |
+
+**n8n** ([`n8n/`](n8n/README.md)): four importable workflows. A weekday prospecting run that emails a summary or an ALERT, a Dialfire webhook that maps call results onto the outcome contract and throws if the contract breaks, a daily funnel digest that alerts when nothing was created, and an error workflow for the other three. Same ops pattern as the inbound demo: loud failures through the error workflow, silent failures through the digest, a guard at the intake.
+
+**Langdock** ([`langdock/`](langdock/README.md)): three workflow build specs with the Agent instructions. A weekly run where an Agent writes the update for the sales lead, a form any SDR can use to get a call brief, and a webhook where an Agent classifies free text call notes into an outcome, with a confidence gate before anything reaches the CRM. In the other direction, the engine writes the brief text through Langdock's OpenAI compatible completion API when `LANGDOCK_API_KEY` is set (`gtm/llm.py`), so model usage stays in one governed workspace.
+
+The rule across both: numbers and CRM writes come from code; the model only writes or classifies text, and its output passes the engine's validation before it touches the CRM.
 
 ## Design decisions
 
@@ -105,8 +159,10 @@ Each system is switched on separately in `.env` (see `.env.example`), so you can
 | Lusha | `gtm/providers/lusha.py`, Person API v2 | Written against the public docs |
 | Clay | `gtm/providers/clay.py`, webhook push and export read | Clay has no public table API, the webhook source is the supported way in |
 | Dialfire | `gtm/dialer/dialfire.py`, create contact in a campaign task | Written against the Dialfire support docs |
+| Langdock | `gtm/llm.py`, OpenAI compatible completion API | Written against the Langdock API docs |
+| n8n | `n8n/*.json` | Graph and Code node logic tested; import into a live n8n instance not yet done from this repo |
 
-The honest state: the engine, the flows and the mock adapters are tested end to end (`pytest`, 12 tests, also run in CI). The live adapters follow each vendor's published API but have not been exercised against paid accounts from this repo. Run `--dry-run` and a sandbox first.
+The honest state: the engine, all seven flows, the HTTP server and the mock adapters are tested end to end (`pytest`, 31 tests, also run in CI). The tests also check every n8n workflow graph and execute the JavaScript of each n8n Code node. The live adapters follow each vendor's published API but have not been exercised against paid accounts from this repo. Run `--dry-run` and a sandbox first.
 
 To bring your own accounts, pass `--source your_list.csv` with the columns `domain,name,industry,employees,country,city,signals`, where signals look like `hiring_sales:2026-11-01:3 open SDR roles|funding:2026-10-12:Series B`.
 
@@ -127,8 +183,14 @@ gtm/
   providers/       mock, cognism, lusha, clay, waterfall
   crm/             mock, hubspot
   dialer/          mock, dialfire
-  flows/           the five flows
-tests/       unit and pipeline tests
+  flows/           the seven flows
+  service.py       wires config, adapters and state for every caller
+  server.py        HTTP entry point for n8n and Langdock
+  llm.py           Langdock completion API client
+n8n/         four workflow exports and setup notes
+langdock/    workflow build specs and Agent instructions
+scripts/     build_n8n.py generates the n8n exports
+tests/       unit, pipeline, call flow, server and n8n tests
 ```
 
 Related: [gtm-actions-practice](https://github.com/Swarno1996/gtm-actions-practice) is the inbound counterpart, a lead scoring pipeline on a GitHub Actions cron.

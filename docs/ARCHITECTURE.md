@@ -12,6 +12,10 @@ The flows only know three interfaces. Everything vendor specific sits behind the
 
 Adding Salesforce, Apollo or Aircall means one new file that implements the port and one line in `gtm/settings.py`.
 
+## Callers
+
+`gtm/service.py` is the only place that builds adapters and state. The CLI, the HTTP server, n8n and Langdock all go through it, so a flow behaves the same whatever triggered it. The server serializes requests with a lock: the mock CRM and the ledger are files, and two prospecting runs must never overlap.
+
 ## Order of checks in `prospect`
 
 1. Hard filters and scoring (`icp.py`). Free.
@@ -51,3 +55,5 @@ Tier A needs 65. Maximum fit contributes 60, so tier A is unreachable without a 
 - Name based company matching is exact after normalization. It will not match "Hansa Fracht" to "HFL Group".
 - The Dialfire adapter relies on the ledger for idempotency and does not query the campaign.
 - Signals arrive with the account source. Nothing in this repo detects signals on its own.
+- The server is a single process with a global lock. It is sized for scheduled runs and dialer webhooks, not for high request volume.
+- Dialfire status values are defined per campaign. The mapping in n8n workflow 02 is an example to adapt.

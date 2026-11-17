@@ -1,0 +1,36 @@
+# Langdock workflow build spec. Langdock workflows are built in the editor;
+# this file lists the nodes and their settings in order so the workflow can be
+# rebuilt exactly. It is not an import file.
+name: "GTM L1: Weekly prospecting run with summary"
+nodes:
+  - name: Monday 07:00
+    type: Scheduled Trigger
+    schedule: "0 7 * * 1"
+    timezone: Europe/Berlin
+
+  - name: Run prospecting
+    type: HTTP Request
+    method: POST
+    url: "https://<your-engine-host>/prospect"
+    headers: {X-GTM-Secret: "<stored as a secret>", Content-Type: application/json}
+    body: {max_credits: 100, push_dialer: true, dry_run: false}
+    timeout_seconds: 300
+
+  - name: Check run
+    type: Condition
+    if: "{{ run_prospecting.output.status === 200 }}"
+    else: Notify failure
+
+  - name: Write summary
+    type: Agent
+    instructions: langdock/agents/run_summary_agent.md
+    input: "{{ run_prospecting.output.body }}"
+
+  - name: Send to sales lead
+    type: Notification          # or a Slack or Outlook action
+    to: sales lead
+    message: "{{ write_summary.output }}"
+
+  - name: Notify failure
+    type: Notification
+    message: "Prospecting run failed with status {{ run_prospecting.output.status }}"

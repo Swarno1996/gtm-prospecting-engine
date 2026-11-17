@@ -1,0 +1,242 @@
+{
+  "name": "GTM 01: Scheduled prospecting run",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "2beffeb5-2ba9-5928-a1ca-2059dbfc055e",
+      "name": "Weekdays 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8be715dd-5ea0-536b-be85-981f2f1033c7",
+              "name": "engineUrl",
+              "value": "http://localhost:8787",
+              "type": "string"
+            },
+            {
+              "id": "bca4aa6d-0d7d-58ae-81df-c303baa8a1f4",
+              "name": "alertEmail",
+              "value": "you@example.com",
+              "type": "string"
+            },
+            {
+              "id": "520d5d9b-0f5f-5c98-9562-bdea74d3be08",
+              "name": "maxCredits",
+              "value": "50",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6bdb0bef-4e76-5b12-8517-68e9d38218c0",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.engineUrl }}/prospect",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 300000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ max_credits: Number($('Config').item.json.maxCredits), push_dialer: true, dry_run: false }) }}"
+      },
+      "id": "1002e721-da0b-5252-8138-727fa03eb874",
+      "name": "Run prospecting",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turn the engine's run result into one alert decision and one readable email.\nconst r = $input.first().json;\nconst o = r.outcomes || {};\nconst providers = Object.entries(r.provider_stats || {})\n  .map(([n, s]) => `${n}: ${s.reveals} reveals, ${s.valid_phone} valid phone, ${s.bad_phone} bad phone`)\n  .join('\\n');\nconst contacts = (r.contacts || []).map(c => `${c.name} (${c.phone_source})`).join('\\n');\nconst alert = r.sourced === 0 || (r.contacts_created === 0 && !r.dry_run);\nreturn [{ json: {\n  alert,\n  subject: alert\n    ? `ALERT prospecting run ${r.run_id}: ${r.contacts_created} contacts created`\n    : `Prospecting run ${r.run_id}: ${r.contacts_created} new contacts, ${r.credits_spent} credits`,\n  body: [\n    `Accounts sourced: ${r.sourced}`,\n    `Contacts created with SDR call tasks: ${r.contacts_created}`,\n    `Credits spent: ${r.credits_spent}`,\n    `Outcomes: ${JSON.stringify(o)}`,\n    '', 'Provider quality:', providers || 'no reveals',\n    '', 'New contacts:', contacts || 'none',\n  ].join('\\n'),\n}}];"
+      },
+      "id": "db3f96b6-4e5d-5430-a915-dfdd65a2c7d4",
+      "name": "Build summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a4539e54-1d36-5880-9c67-f3c83ebd9ea3",
+              "leftValue": "={{ $json.alert }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "39a39ce9-a805-5f03-8b16-b04220d79250",
+      "name": "Needs attention?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').item.json.alertEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "24b2fa4f-2523-5bae-a1c3-d7e186379693",
+      "name": "Send ALERT",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').item.json.alertEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "fdf89787-7672-5424-b802-bab5e72d9dc5",
+      "name": "Send run summary",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Weekdays 07:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Run prospecting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run prospecting": {
+      "main": [
+        [
+          {
+            "node": "Build summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build summary": {
+      "main": [
+        [
+          {
+            "node": "Needs attention?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs attention?": {
+      "main": [
+        [
+          {
+            "node": "Send ALERT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send run summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    {
+      "name": "gtm"
+    },
+    {
+      "name": "prospecting"
+    }
+  ]
+}

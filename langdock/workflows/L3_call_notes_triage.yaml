@@ -1,0 +1,35 @@
+# Langdock workflow build spec, not an import file.
+# For dialers or SDR tools that only give you free text notes, not a status code.
+name: "GTM L3: Call notes triage to CRM"
+nodes:
+  - name: Call logged
+    type: Webhook Trigger
+    secret: required           # sent as X-Webhook-Secret or ?secret=
+    expects: {crm_contact_id: string, call_id: string, called_at: string, notes: string}
+
+  - name: Classify call
+    type: Agent
+    instructions: langdock/agents/call_notes_triage_agent.md
+    structured_output: true
+    input: "Call time: {{ call_logged.output.called_at }}\nNotes: {{ call_logged.output.notes }}"
+
+  - name: Confident?
+    type: Condition
+    if: "{{ classify_call.output.confidence >= 0.7 }}"
+    else: Ask the SDR
+
+  - name: Write outcome to CRM
+    type: HTTP Request
+    method: POST
+    url: "https://<your-engine-host>/call-outcome"
+    headers: {X-GTM-Secret: "<stored as a secret>", Content-Type: application/json}
+    body:
+      crm_contact_id: "{{ call_logged.output.crm_contact_id }}"
+      call_id: "{{ call_logged.output.call_id }}"
+      outcome: "{{ classify_call.output.outcome }}"
+      callback_at: "{{ classify_call.output.callback_at }}"
+      notes: "{{ call_logged.output.notes }}"
+
+  - name: Ask the SDR
+    type: Notification
+    message: "Could not classify the call with {{ call_logged.output.crm_contact_id }} ({{ classify_call.output.reason }}). Please set the outcome in the CRM."
